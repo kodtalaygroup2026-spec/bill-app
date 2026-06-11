@@ -2,3 +2,5 @@ anthropic>=0.40.0
 streamlit
 pillow
 pandas
+gspread==6.1.2
+google-auth==2.29.0
