@@ -21,7 +21,7 @@ def get_sheet():
         ]
     )
     gc = gspread.authorize(creds)
-    return gc.open("Bill App Data").Sheet1  # ← เปลี่ยนชื่อ Sheet ให้ตรง
+    return gc.open("Bill App Data").worksheet("Sheet1")  # ← เปลี่ยนชื่อ Sheet ให้ตรง
 
 # ── UI ────────────────────────────────────────────────────────
 st.title("🧾 ระบบอ่านบิลอัตโนมัติ")
