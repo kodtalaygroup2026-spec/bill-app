@@ -39,6 +39,7 @@ def match_supplier_item(supplier: str, item: str, master: list[dict]) -> dict:
     sup_norm  = normalize(supplier)
     item_norm = normalize(item)
 
+    # ระดับ 1: ตรงทั้ง supplier และ item
     for row in master:
         if (normalize(row["supplier_raw"]) == sup_norm and
                 normalize(row["item_raw"]) == item_norm):
@@ -49,6 +50,7 @@ def match_supplier_item(supplier: str, item: str, master: list[dict]) -> dict:
                 "match_status":      "✅ ตรง"
             }
 
+    # ระดับ 2: ใกล้เคียงทั้งคู่
     for row in master:
         sup_match  = normalize(row["supplier_raw"]) in sup_norm or \
                      sup_norm in normalize(row["supplier_raw"])
@@ -62,6 +64,7 @@ def match_supplier_item(supplier: str, item: str, master: list[dict]) -> dict:
                 "match_status":      "🔶 ใกล้เคียง"
             }
 
+    # ระดับ 3: supplier ตรงอย่างเดียว
     for row in master:
         sup_match = normalize(row["supplier_raw"]) in sup_norm or \
                     sup_norm in normalize(row["supplier_raw"])
@@ -73,6 +76,7 @@ def match_supplier_item(supplier: str, item: str, master: list[dict]) -> dict:
                 "match_status":      "🔶 supplier ตรง / item ไม่พบ"
             }
 
+    # ระดับ 4: ไม่พบเลย
     return {
         "supplier_standard": supplier,
         "item_standard":     item,
@@ -101,7 +105,7 @@ if uploaded_file is not None:
 
             response = client.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=4096,
+                max_tokens=8096,
                 messages=[{
                     "role": "user",
                     "content": [
@@ -115,23 +119,10 @@ if uploaded_file is not None:
                         },
                         {
                             "type": "text",
-                            "text": """อ่านข้อมูลจากใบเสร็จ/บิลนี้ แล้วแปลงเป็น JSON array
-ตัวอย่าง format:
-[
-  {
-    "รับของ": "30/3/2026",
-    "bill_date": "29/3/2026",
-    "supplier": "ชื่อซัพพลายเออร์",
-    "item": "ชื่อสินค้า",
-    "SPEC": "",
-    "QUANTITY": 1,
-    "PRICE": 100.0,
-    "amount": 100.0,
-    "discount": 0,
-    "note": ""
-  }
-]
-ตอบเฉพาะ JSON เท่านั้น ไม่มีข้อความอื่น ไม่มี ```"""
+                            "text": """อ่านบิลนี้ แปลงเป็น JSON array รูปแบบนี้เท่านั้น ห้ามมีข้อความอื่น:
+[{"รับของ":"","bill_date":"","supplier":"","item":"","SPEC":"","QUANTITY":0,"PRICE":0,"amount":0,"discount":0,"note":""}]
+- ถ้าไม่มีข้อมูลในช่อง ให้ใส่ "" หรือ 0
+- ตอบ JSON อย่างเดียว ไม่มี ``` ไม่มีคำอธิบาย"""
                         }
                     ]
                 }]
@@ -139,48 +130,56 @@ if uploaded_file is not None:
 
             raw = response.content[0].text.strip()
             raw = re.sub(r"```json|```python|```", "", raw).strip()
-            match = re.search(r'\[.*\]', raw, re.DOTALL)
-            if match:
-                raw = match.group(0)
+            found = re.search(r'\[.*\]', raw, re.DOTALL)
+            if found:
+                raw = found.group(0)
 
             try:
-                rows   = json.loads(raw)
-                df     = pd.DataFrame(rows)
-                master = load_master_list()
+                rows = json.loads(raw)
+                df   = pd.DataFrame(rows)
 
-                sup_std, item_std, cats, statuses = [], [], [], []
-                for _, row in df.iterrows():
-                    result = match_supplier_item(
-                        str(row.get("supplier", "")),
-                        str(row.get("item", "")),
-                        master
-                    )
-                    sup_std.append(result["supplier_standard"])
-                    item_std.append(result["item_standard"])
-                    cats.append(result["category"])
-                    statuses.append(result["match_status"])
+                # กรองรายการที่ amount = 0 หรือว่างออก
+                df = df[pd.to_numeric(df["amount"], errors="coerce") > 0]
+                df = df.reset_index(drop=True)
 
-                df["supplier_original"] = df["supplier"]
-                df["item_original"]     = df["item"]
-                df["supplier"]          = sup_std
-                df["item"]              = item_std
-                df["category"]          = cats
-                df["match_status"]      = statuses
+                if df.empty:
+                    st.warning("⚠️ ไม่พบรายการที่มียอดเงิน กรุณาตรวจสอบรูปบิลครับ")
+                else:
+                    # แมช Supplier + Item กับ Master List
+                    master = load_master_list()
+                    sup_std, item_std, cats, statuses = [], [], [], []
 
-                def flag_row(row):
-                    issues = []
-                    if pd.to_numeric(row.get("discount", 0), errors="coerce") < 0:
-                        issues.append("⚠️ discount ติดลบ")
-                    if pd.to_numeric(row.get("amount", 0), errors="coerce") <= 0:
-                        issues.append("⚠️ amount ผิดปกติ")
-                    if not str(row.get("supplier", "")).strip():
-                        issues.append("⚠️ ไม่มี supplier")
-                    if "ไม่พบ" in str(row.get("match_status", "")):
-                        issues.append("❓ ไม่พบใน Master")
-                    return ", ".join(issues) if issues else "✅ ปกติ"
+                    for _, row in df.iterrows():
+                        result = match_supplier_item(
+                            str(row.get("supplier", "")),
+                            str(row.get("item", "")),
+                            master
+                        )
+                        sup_std.append(result["supplier_standard"])
+                        item_std.append(result["item_standard"])
+                        cats.append(result["category"])
+                        statuses.append(result["match_status"])
 
-                df["flag"] = df.apply(flag_row, axis=1)
-                st.session_state["bill_df"] = df
+                    df["supplier_original"] = df["supplier"]
+                    df["item_original"]     = df["item"]
+                    df["supplier"]          = sup_std
+                    df["item"]              = item_std
+                    df["category"]          = cats
+                    df["match_status"]      = statuses
+
+                    # Flag รายการผิดปกติ
+                    def flag_row(row):
+                        issues = []
+                        if pd.to_numeric(row.get("discount", 0), errors="coerce") < 0:
+                            issues.append("⚠️ discount ติดลบ")
+                        if not str(row.get("supplier", "")).strip():
+                            issues.append("⚠️ ไม่มี supplier")
+                        if "ไม่พบ" in str(row.get("match_status", "")):
+                            issues.append("❓ ไม่พบใน Master")
+                        return ", ".join(issues) if issues else "✅ ปกติ"
+
+                    df["flag"] = df.apply(flag_row, axis=1)
+                    st.session_state["bill_df"] = df
 
             except json.JSONDecodeError:
                 st.error("❌ Claude ตอบกลับมาไม่เป็น JSON — ลองอัปโหลดรูปใหม่ครับ")
@@ -192,6 +191,7 @@ if "bill_df" in st.session_state:
 
     st.success("✅ วิเคราะห์และแมชข้อมูลเสร็จแล้ว!")
 
+    # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("ยอดรวม",
                 f"{pd.to_numeric(df['amount'], errors='coerce').sum():,.2f} บาท")
@@ -201,6 +201,7 @@ if "bill_df" in st.session_state:
     col4.metric("ต้องตรวจสอบ",
                 len(df[df["flag"] != "✅ ปกติ"]))
 
+    # ตารางผลการแมช
     st.subheader("🔍 ผลการแมช Supplier + Item")
     st.dataframe(
         df[["supplier_original", "supplier",
@@ -209,6 +210,7 @@ if "bill_df" in st.session_state:
         use_container_width=True
     )
 
+    # รายการต้องตรวจสอบ
     warnings = df[df["flag"] != "✅ ปกติ"]
     if not warnings.empty:
         st.warning(f"⚠️ พบ {len(warnings)} รายการต้องตรวจสอบ")
@@ -217,11 +219,13 @@ if "bill_df" in st.session_state:
             use_container_width=True
         )
 
+    # Editable table
     st.subheader("📊 ตรวจสอบและแก้ไขข้อมูล")
     edited_df = st.data_editor(
         df, use_container_width=True, num_rows="dynamic"
     )
 
+    # Summary per supplier
     st.subheader("📈 ยอดรวมต่อ Supplier")
     summary = (
         edited_df.groupby("supplier")
@@ -232,6 +236,7 @@ if "bill_df" in st.session_state:
     )
     st.dataframe(summary, use_container_width=True)
 
+    # ส่ง Google Sheets
     st.subheader("📤 ส่งข้อมูลไป Google Sheets")
     po_number = st.text_input("เลข PO", placeholder="เช่น PO-2026-0001")
     status    = st.selectbox("สถานะ",
