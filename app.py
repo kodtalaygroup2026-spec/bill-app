@@ -147,12 +147,13 @@ if uploaded_file is not None:
             )
 
             raw = response.content[0].text.strip()
-            raw = re.sub(r"```json|```python|```", "", raw).strip()
-            match = re.search(r'\[.*\]', raw, re.DOTALL)
-if match:
-    raw = match.group(0)
+                raw = re.sub(r"```json|```python|```", "", raw).strip()
+                match = re.search(r'\[.*\]', raw, re.DOTALL)
+                if match:
+                    raw = match.group(0)
 
-            try:
+                try:
+                    rows   = json.loads(raw)
                 rows   = json.loads(raw)
                 df     = pd.DataFrame(rows)
                 master = load_master_list()
