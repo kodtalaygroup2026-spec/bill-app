@@ -147,7 +147,10 @@ if uploaded_file is not None:
             )
 
             raw = response.content[0].text.strip()
-            raw = re.sub(r"```json|```", "", raw).strip()
+            raw = re.sub(r"```json|```python|```", "", raw).strip()
+            match = re.search(r'\[.*\]', raw, re.DOTALL)
+if match:
+    raw = match.group(0)
 
             try:
                 rows   = json.loads(raw)
