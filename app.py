@@ -249,6 +249,12 @@ if "bill_df" in st.session_state:
                 with st.spinner("กำลังส่งข้อมูล..."):
                     sheet     = get_sheet()
                     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                    
+                    EXPORT_COLS = [
+    "รับของ", "bill_date", "supplier", "item",
+    "SPEC", "QUANTITY", "PRICE", "amount",
+    "discount", "note"
+]
 
                     send_df = edited_df.copy()
                     send_df["PO_number"]    = po_number.strip()
