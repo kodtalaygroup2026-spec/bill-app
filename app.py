@@ -33,18 +33,12 @@ def load_master_list() -> list[dict]:
 
 # ── Match Logic ───────────────────────────────────────────────
 def normalize(text: str) -> str:
-    """ลบช่องว่างและแปลงเป็นพิมพ์เล็กเพื่อเปรียบเทียบ"""
     return str(text).strip().lower().replace(" ", "")
 
 def match_supplier_item(supplier: str, item: str, master: list[dict]) -> dict:
-    """
-    แมช supplier + item กับ Master List
-    คืนค่า dict ที่มี supplier_standard, item_standard, match_status
-    """
     sup_norm  = normalize(supplier)
     item_norm = normalize(item)
 
-    # ── ระดับ 1: ตรงทั้ง supplier และ item ──────────────────
     for row in master:
         if (normalize(row["supplier_raw"]) == sup_norm and
                 normalize(row["item_raw"]) == item_norm):
@@ -55,7 +49,6 @@ def match_supplier_item(supplier: str, item: str, master: list[dict]) -> dict:
                 "match_status":      "✅ ตรง"
             }
 
-    # ── ระดับ 2: ตรง supplier + item ใกล้เคียง ──────────────
     for row in master:
         sup_match  = normalize(row["supplier_raw"]) in sup_norm or \
                      sup_norm in normalize(row["supplier_raw"])
@@ -69,19 +62,17 @@ def match_supplier_item(supplier: str, item: str, master: list[dict]) -> dict:
                 "match_status":      "🔶 ใกล้เคียง"
             }
 
-    # ── ระดับ 3: ตรง supplier อย่างเดียว ─────────────────────
     for row in master:
         sup_match = normalize(row["supplier_raw"]) in sup_norm or \
                     sup_norm in normalize(row["supplier_raw"])
         if sup_match:
             return {
                 "supplier_standard": row["supplier_standard"],
-                "item_standard":     item,  # ใช้ชื่อเดิม
+                "item_standard":     item,
                 "category":          row.get("category", ""),
                 "match_status":      "🔶 supplier ตรง / item ไม่พบ"
             }
 
-    # ── ระดับ 4: ไม่พบเลย ────────────────────────────────────
     return {
         "supplier_standard": supplier,
         "item_standard":     item,
@@ -147,20 +138,17 @@ if uploaded_file is not None:
             )
 
             raw = response.content[0].text.strip()
-                raw = re.sub(r"```json|```python|```", "", raw).strip()
-                match = re.search(r'\[.*\]', raw, re.DOTALL)
-                if match:
-                    raw = match.group(0)
+            raw = re.sub(r"```json|```python|```", "", raw).strip()
+            match = re.search(r'\[.*\]', raw, re.DOTALL)
+            if match:
+                raw = match.group(0)
 
-                try:
-                    rows   = json.loads(raw)
+            try:
                 rows   = json.loads(raw)
                 df     = pd.DataFrame(rows)
                 master = load_master_list()
 
-                # ── แมช Supplier + Item ──────────────────────
                 sup_std, item_std, cats, statuses = [], [], [], []
-
                 for _, row in df.iterrows():
                     result = match_supplier_item(
                         str(row.get("supplier", "")),
@@ -179,7 +167,6 @@ if uploaded_file is not None:
                 df["category"]          = cats
                 df["match_status"]      = statuses
 
-                # ── Flag รายการผิดปกติ ───────────────────────
                 def flag_row(row):
                     issues = []
                     if pd.to_numeric(row.get("discount", 0), errors="coerce") < 0:
@@ -205,7 +192,6 @@ if "bill_df" in st.session_state:
 
     st.success("✅ วิเคราะห์และแมชข้อมูลเสร็จแล้ว!")
 
-    # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("ยอดรวม",
                 f"{pd.to_numeric(df['amount'], errors='coerce').sum():,.2f} บาท")
@@ -215,7 +201,6 @@ if "bill_df" in st.session_state:
     col4.metric("ต้องตรวจสอบ",
                 len(df[df["flag"] != "✅ ปกติ"]))
 
-    # ── ตารางผลการแมช ────────────────────────────────────────
     st.subheader("🔍 ผลการแมช Supplier + Item")
     st.dataframe(
         df[["supplier_original", "supplier",
@@ -224,7 +209,6 @@ if "bill_df" in st.session_state:
         use_container_width=True
     )
 
-    # Flag warning
     warnings = df[df["flag"] != "✅ ปกติ"]
     if not warnings.empty:
         st.warning(f"⚠️ พบ {len(warnings)} รายการต้องตรวจสอบ")
@@ -233,13 +217,11 @@ if "bill_df" in st.session_state:
             use_container_width=True
         )
 
-    # Editable table
     st.subheader("📊 ตรวจสอบและแก้ไขข้อมูล")
     edited_df = st.data_editor(
         df, use_container_width=True, num_rows="dynamic"
     )
 
-    # Summary per supplier
     st.subheader("📈 ยอดรวมต่อ Supplier")
     summary = (
         edited_df.groupby("supplier")
@@ -250,9 +232,7 @@ if "bill_df" in st.session_state:
     )
     st.dataframe(summary, use_container_width=True)
 
-    # ── ส่ง Google Sheets ─────────────────────────────────────
     st.subheader("📤 ส่งข้อมูลไป Google Sheets")
-
     po_number = st.text_input("เลข PO", placeholder="เช่น PO-2026-0001")
     status    = st.selectbox("สถานะ",
                              ["pending", "approved", "paid", "rejected"])
