@@ -11,7 +11,6 @@ from google.oauth2.service_account import Credentials
 # ── Setup ─────────────────────────────────────────────────────
 client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
 
-@st.cache_resource
 def get_workbook():
     creds = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
